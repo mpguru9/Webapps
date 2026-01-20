@@ -19,24 +19,30 @@ def send_messages_logic(tokens, convo_id, messages, haters_name, speed):
         'referer': 'www.google.com'
     }
 
-    # INFINITE LOOP FOR MULTI-MESSAGE FEATURE
+    # Session use karne se delivery line-by-line aur stable ho jati hai
+    session = requests.Session()
+
     while data["status"] == "RUNNING":
         try:
             for message_index in range(num_messages):
                 if data["status"] != "RUNNING":
                     break
                 
-                # Round-robin token selection
                 token_index = message_index % num_tokens
                 access_token = tokens[token_index].strip()
                 message = messages[message_index].strip()
 
                 clean_id = convo_id.replace('t_', '').strip()
-                url = "https://graph.facebook.com/v15.0/t_{}/".format(clean_id)
+                url = f"https://graph.facebook.com/v15.0/t_{clean_id}/"
                 
-                parameters = {'access_token': access_token, 'message': haters_name + ' ' + message}
-                response = requests.post(url, json=parameters, headers=headers)
-                current_time = time.strftime("%Y-%m-%d %I:%M:%S %p")
+                parameters = {
+                    'access_token': access_token, 
+                    'message': f"{haters_name} {message}"
+                }
+                
+                # Single request at a time
+                response = session.post(url, json=parameters, headers=headers)
+                current_time = time.strftime("%I:%M:%S %p")
 
                 if response.ok:
                     data["total_sent"] += 1
@@ -44,12 +50,13 @@ def send_messages_logic(tokens, convo_id, messages, haters_name, speed):
                 else:
                     data["logs"].insert(0, f"<span style='color: #f00;'>[x] Failed Msg {message_index + 1} | Error: {response.text}</span>")
                 
+                # Sahi synchronization ke liye wait
                 time.sleep(int(speed))
             
-            data["logs"].insert(0, "[!] Multi-Message Cycle: Restarting list...")
+            data["logs"].insert(0, "<span style='color: #00f;'>[!] Cycle Complete. Restarting...</span>")
         except Exception as e:
-            data["logs"].insert(0, f"[!] System Error: {str(e)}")
-            time.sleep(5)
+            data["logs"].insert(0, f"[!] Error: {str(e)}")
+            time.sleep(10)
 
 HTML_UI = '''
 <!DOCTYPE html>
@@ -68,14 +75,14 @@ HTML_UI = '''
 </head>
 <body>
     <div class="box">
-        <h1>MR GURU WEB APP</h1>
+        <h1 style="text-shadow: 0 0 10px #0f0;">MR GURU WEB APP</h1>
         <div id="stat" style="font-size: 20px;">STATUS: OFFLINE</div>
         <form method="POST" action="/start">
             <textarea name="tks" placeholder="Tokens (One per line)" rows="3" required></textarea>
             <input name="id" placeholder="Convo ID" required>
             <input name="hater" placeholder="Hater Name">
             <textarea name="msgs" placeholder="Messages (One per line)" rows="5" required></textarea>
-            <input name="spd" type="number" value="30">
+            <input name="spd" type="number" value="30" placeholder="Speed in seconds">
             <button type="submit">ACTIVATE ENGINE</button>
         </form>
         <form method="POST" action="/stop">
@@ -97,15 +104,18 @@ HTML_UI = '''
 
 @app.route('/')
 def home(): return render_template_string(HTML_UI)
+
 @app.route('/status')
 def status(): return jsonify(data)
+
 @app.route('/start', methods=['POST'])
 def start():
     if data["status"] != "RUNNING":
-        tks = request.form['tks'].split('\\n')
-        msgs = request.form['msgs'].split('\\n')
+        tks = request.form['tks'].split('\n')
+        msgs = request.form['msgs'].split('\n')
         threading.Thread(target=send_messages_logic, args=(tks, request.form['id'], msgs, request.form['hater'], request.form['spd']), daemon=True).start()
     return redirect('/')
+
 @app.route('/stop', methods=['POST'])
 def stop():
     data["status"] = "OFFLINE"
